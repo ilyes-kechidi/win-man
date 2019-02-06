@@ -1,8 +1,13 @@
 #include "WinCtlWindow.h"
-#include "windows.h"
+#include <windows.h>
+#include <stdio.h>
+#include <psapi.h>
+#include <iostream>
+#include <string>
 
 #pragma warning ( disable:4311 )
 #pragma warning ( disable:4302 )
+#pragma comment(lib, "psapi.lib")
 
 Nan::Persistent<v8::Function> Window::constructor;
 
@@ -12,10 +17,12 @@ NAN_MODULE_INIT(Window::Init) {
 	tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
 	Nan::SetPrototypeMethod(tpl, "isVisible", isVisible);
+	Nan::SetPrototypeMethod(tpl, "isMainWindow", isMainWindow);
 	Nan::SetPrototypeMethod(tpl, "getTitle", getTitle);
 	Nan::SetPrototypeMethod(tpl, "getHwnd", getHwnd);
 	Nan::SetPrototypeMethod(tpl, "getClassName", getClassName);
 	Nan::SetPrototypeMethod(tpl, "getPid", getPid);
+	Nan::SetPrototypeMethod(tpl, "getProcessName", getProcessName);
 	Nan::SetPrototypeMethod(tpl, "getParent", getParent);
 	Nan::SetPrototypeMethod(tpl, "getAncestor", getAncestor);
 	Nan::SetPrototypeMethod(tpl, "getMonitor", getMonitor);
@@ -25,6 +32,7 @@ NAN_MODULE_INIT(Window::Init) {
 	Nan::SetPrototypeMethod(tpl, "showWindow", showWindow);
 	Nan::SetPrototypeMethod(tpl, "move", move);
 	Nan::SetPrototypeMethod(tpl, "moveRelative", moveRelative);
+	Nan::SetPrototypeMethod(tpl, "moveToTop", moveToTop);
 	Nan::SetPrototypeMethod(tpl, "dimensions", dimensions);
 
 	constructor.Reset(Nan::GetFunction(tpl).ToLocalChecked());
@@ -47,6 +55,7 @@ NAN_METHOD(Window::New) {
 		const int argc = 1;
 		v8::Local<v8::Value> argv[argc] = {info[0]};
 		v8::Local<v8::Function> cons = Nan::New(constructor);
+		//info.GetReturnValue().Set(cons->NewInstance(argc, argv));
 		info.GetReturnValue().Set(Nan::NewInstance(cons,argc, argv).ToLocalChecked());
 	}
 }
@@ -124,14 +133,20 @@ NAN_METHOD(Window::isVisible) {
 	info.GetReturnValue().Set(Nan::New(IsWindowVisible(obj->windowHandle)));
 }
 
+NAN_METHOD(Window::isMainWindow) {
+	Window* obj = Nan::ObjectWrap::Unwrap<Window>(info.This());
+
+	info.GetReturnValue().Set(Nan::New(GetWindow(obj->windowHandle, GW_OWNER) == (HWND)0));
+}
 
 NAN_METHOD(Window::getTitle) {
 	Window* obj = Nan::ObjectWrap::Unwrap<Window>(info.This());
-
-	char wnd_title[256];
-	GetWindowText(obj->windowHandle, wnd_title, sizeof(wnd_title));
-
-	info.GetReturnValue().Set(Nan::New(wnd_title).ToLocalChecked());
+    
+	wchar_t wnd_title[256];
+    
+	GetWindowTextW(obj->windowHandle, wnd_title, sizeof(wnd_title));
+    
+	info.GetReturnValue().Set(Nan::New((const uint16_t *) wnd_title).ToLocalChecked());
 }
 
 NAN_METHOD(Window::getHwnd) {
@@ -154,6 +169,35 @@ NAN_METHOD(Window::getPid) {
 	GetWindowThreadProcessId(obj->windowHandle, &lpdwProcessId);
 
 	info.GetReturnValue().Set(Nan::New((int)lpdwProcessId));
+}
+
+NAN_METHOD(Window::getProcessName) {
+	Window* obj = Nan::ObjectWrap::Unwrap<Window>(info.This());
+	DWORD lpdwProcessId;
+    
+    wchar_t szProcessName[MAX_PATH] = L"<unknown>";
+    
+	GetWindowThreadProcessId(obj->windowHandle, &lpdwProcessId);
+    
+    HANDLE hProcess = OpenProcess(
+        PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+        FALSE, 
+        lpdwProcessId 
+    );
+    
+    if (NULL != hProcess ) {
+        HMODULE hMod;
+        DWORD cbNeeded;
+
+        if ( EnumProcessModules( hProcess, &hMod, sizeof(hMod), 
+             &cbNeeded) ) {
+            GetModuleBaseNameW( hProcess, hMod, szProcessName, 
+                               sizeof(szProcessName)/sizeof(wchar_t) );
+        }
+    }
+
+    CloseHandle(hProcess);
+	info.GetReturnValue().Set(Nan::New((const uint16_t *) szProcessName).ToLocalChecked());
 }
 
 NAN_METHOD(Window::getParent) {
@@ -265,6 +309,25 @@ NAN_METHOD(Window::moveRelative) {
 	MoveWindow(obj->windowHandle, x, y, w, h, true);
 }
 
+
+NAN_METHOD(Window::moveToTop) {
+	Window* obj = Nan::ObjectWrap::Unwrap<Window>(info.This());
+    DWORD threadId = GetWindowThreadProcessId(obj->windowHandle, NULL);
+    
+    SendMessage(obj->windowHandle, WM_SYSCOMMAND, SC_RESTORE, 0); // restore the minimize window
+    
+    AttachThreadInput(threadId, GetCurrentThreadId(), TRUE);
+    
+	SetWindowPos(obj->windowHandle, HWND_TOPMOST, 0, 0, 0, 0, SWP_SHOWWINDOW|SWP_NOSIZE|SWP_NOMOVE);
+	SetWindowPos(obj->windowHandle, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_SHOWWINDOW|SWP_NOSIZE|SWP_NOMOVE);
+    SetForegroundWindow(obj->windowHandle);
+    
+    AttachThreadInput(threadId, GetCurrentThreadId(), FALSE);
+    
+    SetFocus(obj->windowHandle);
+    SetActiveWindow(obj->windowHandle);
+    RedrawWindow(obj->windowHandle, NULL, 0, RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);  // redraw to prevent the window blank.
+}
 
 NAN_METHOD(Window::dimensions) {
 	Window* obj = Nan::ObjectWrap::Unwrap<Window>(info.This());

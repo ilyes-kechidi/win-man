@@ -22,10 +22,12 @@ private:
 
 	static NAN_METHOD(exists);
 	static NAN_METHOD(isVisible);
+	static NAN_METHOD(isMainWindow);
 	static NAN_METHOD(getTitle);
 	static NAN_METHOD(getHwnd);
 	static NAN_METHOD(getClassName);
 	static NAN_METHOD(getPid);
+	static NAN_METHOD(getProcessName);
 
 	static NAN_METHOD(getParent);
 	static NAN_METHOD(getAncestor);
@@ -36,6 +38,7 @@ private:
 	static NAN_METHOD(showWindow);
 	static NAN_METHOD(move);
 	static NAN_METHOD(moveRelative);
+    static NAN_METHOD(moveToTop);
 	static NAN_METHOD(dimensions);
 
 	HWND windowHandle;
