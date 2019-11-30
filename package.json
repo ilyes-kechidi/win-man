@@ -1,6 +1,6 @@
 {
-  "name": "winctl",
-  "version": "1.0.2",
+  "name": "winman",
+  "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
